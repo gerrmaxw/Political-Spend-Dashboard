@@ -1,0 +1,15 @@
+-- Relationship checklist.
+-- Create single-direction one-to-many relationships from each dimension to both fact spend tables:
+-- DimSnapshot[SnapshotDate] -> FactSpendSnapshot[SnapshotDate]
+-- DimAdvertiser[AdvertiserKey] -> FactSpendSnapshot[AdvertiserKey] and FactSpendCurrent[AdvertiserKey]
+-- DimAgency[AgencyKey] -> FactSpendSnapshot[AgencyKey] and FactSpendCurrent[AgencyKey]
+-- DimMediaType[MediaTypeKey] -> FactSpendSnapshot[MediaTypeKey] and FactSpendCurrent[MediaTypeKey]
+-- DimState[StateKey] -> FactSpendSnapshot[StateKey] and FactSpendCurrent[StateKey]
+-- DimDMA[DMAKey] -> FactSpendSnapshot[DMAKey] and FactSpendCurrent[DMAKey]
+-- DimOffice[OfficeKey] -> FactSpendSnapshot[OfficeKey] and FactSpendCurrent[OfficeKey]
+-- DimRaceLevel[RaceLevelKey] -> FactSpendSnapshot[RaceLevelKey] and FactSpendCurrent[RaceLevelKey]
+-- DimParty[PartyKey] -> FactSpendSnapshot[PartyKey] and FactSpendCurrent[PartyKey]
+-- DimStation[StationKey] -> FactSpendSnapshot[StationKey] and FactSpendCurrent[StationKey]
+-- DimNetwork[NetworkKey] -> FactSpendSnapshot[NetworkKey] and FactSpendCurrent[NetworkKey]
+-- DimCandidate[CandidateKey] -> FactSpendSnapshot[CandidateKey], FactSpendCurrent[CandidateKey], FactFECIndependentExpenditures[CandidateKey], FactElectionResults[CandidateKey]
+-- DimRace[RaceKey] -> FactSpendSnapshot[RaceKey], FactSpendCurrent[RaceKey], FactFECIndependentExpenditures[RaceKey], FactElectionResults[RaceKey], BridgeRaceDMA[RaceKey]

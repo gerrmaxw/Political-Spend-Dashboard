@@ -1,0 +1,295 @@
+DEFINE
+    TABLE 'TV Spend Floor Slider' =
+        SELECTCOLUMNS ( GENERATESERIES ( 0, 250000, 1000 ), "Value", [Value] )
+
+    TABLE 'Cable Share Target Slider' =
+        SELECTCOLUMNS ( GENERATESERIES ( 0, 0.5, 0.01 ), "Value", [Value] )
+
+    TABLE 'Cable Opportunity Floor Slider' =
+        SELECTCOLUMNS ( GENERATESERIES ( 0, 250000, 5000 ), "Value", [Value] )
+
+    MEASURE 'FactSpendCurrent1'[Total Spend] =
+        SUM ( 'FactSpendCurrent1'[Amount] )
+
+    MEASURE 'FactSpendCurrent1'[Broadcast Spend] =
+        CALCULATE (
+            [Total Spend],
+            KEEPFILTERS ( 'DimMediaType9'[MediaType] = "Broadcast" )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Cable Spend] =
+        CALCULATE (
+            [Total Spend],
+            KEEPFILTERS ( 'DimMediaType9'[MediaType] = "Cable" )
+        )
+
+    MEASURE 'FactSpendCurrent1'[CTV Spend] =
+        CALCULATE (
+            [Total Spend],
+            KEEPFILTERS ( 'DimMediaType9'[MediaType] = "CTV" )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Digital Spend] =
+        CALCULATE (
+            [Total Spend],
+            KEEPFILTERS ( 'DimMediaType9'[MediaType] = "Digital" )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Radio Spend] =
+        CALCULATE (
+            [Total Spend],
+            KEEPFILTERS ( 'DimMediaType9'[MediaType] = "Radio" )
+        )
+
+    MEASURE 'FactSpendCurrent1'[TV Spend] =
+        [Broadcast Spend] + [Cable Spend] + [CTV Spend]
+
+    MEASURE 'FactSpendCurrent1'[Broadcast + CTV Spend] =
+        [Broadcast Spend] + [CTV Spend]
+
+    MEASURE 'FactSpendCurrent1'[Cable Share %] =
+        DIVIDE ( [Cable Spend], [TV Spend] )
+
+    MEASURE 'FactSpendCurrent1'[Broadcast + CTV Share %] =
+        DIVIDE ( [Broadcast + CTV Spend], [TV Spend] )
+
+    MEASURE 'FactSpendCurrent1'[Selected TV Spend Floor] =
+        SELECTEDVALUE ( 'TV Spend Floor Slider'[Value], 11000 )
+
+    MEASURE 'FactSpendCurrent1'[Selected Cable Share Target] =
+        SELECTEDVALUE ( 'Cable Share Target Slider'[Value], 0.15 )
+
+    MEASURE 'FactSpendCurrent1'[Selected Cable Opportunity Floor] =
+        SELECTEDVALUE ( 'Cable Opportunity Floor Slider'[Value], 25000 )
+
+    MEASURE 'FactSpendCurrent1'[Target Cable Spend] =
+        [TV Spend] * [Selected Cable Share Target]
+
+    MEASURE 'FactSpendCurrent1'[Cable Opportunity $] =
+        MAX ( 0, [Target Cable Spend] - [Cable Spend] )
+
+    MEASURE 'FactSpendCurrent1'[No Cable Flag] =
+        IF ( [Broadcast + CTV Spend] > 0 && [Cable Spend] = 0, 1, 0 )
+
+    MEASURE 'FactSpendCurrent1'[Cable Prospect Flag] =
+        IF (
+            [Broadcast + CTV Spend] >= [Selected TV Spend Floor]
+                && COALESCE ( [Cable Share %], 0 ) <= [Selected Cable Share Target],
+            1,
+            0
+        )
+
+    MEASURE 'FactSpendCurrent1'[Meets Cable Opportunity Floor Flag] =
+        IF ( [Cable Opportunity $] >= [Selected Cable Opportunity Floor], 1, 0 )
+
+    MEASURE 'FactSpendCurrent1'[Cable Prospect Label] =
+        SWITCH (
+            TRUE (),
+            [Broadcast + CTV Spend] = 0, "No TV Spend",
+            [Cable Spend] = 0, "Zero Cable",
+            [Cable Share %] <= [Selected Cable Share Target], "Low Cable",
+            "Cable In Mix"
+        )
+
+    MEASURE 'FactSpendCurrent1'[Zero-Cable Advertisers] =
+        CALCULATE (
+            DISTINCTCOUNT ( 'DimAdvertiser7'[AdvertiserKey] ),
+            FILTER ( VALUES ( 'DimAdvertiser7'[AdvertiserKey] ), [No Cable Flag] = 1 )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Cable Prospects] =
+        CALCULATE (
+            DISTINCTCOUNT ( 'DimAdvertiser7'[AdvertiserKey] ),
+            FILTER ( VALUES ( 'DimAdvertiser7'[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Prospect Total Spend] =
+        CALCULATE (
+            [Total Spend],
+            FILTER ( VALUES ( 'DimAdvertiser7'[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Prospect Broadcast + CTV Spend] =
+        CALCULATE (
+            [Broadcast + CTV Spend],
+            FILTER ( VALUES ( 'DimAdvertiser7'[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Prospect Cable Opportunity $] =
+        CALCULATE (
+            [Cable Opportunity $],
+            FILTER ( VALUES ( 'DimAdvertiser7'[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Prospect Cable Share %] =
+        CALCULATE (
+            [Cable Share %],
+            FILTER ( VALUES ( 'DimAdvertiser7'[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+        )
+
+    MEASURE 'FactSpendSnapshot2'[Cumulative Spend as of Snapshot] =
+        SUM ( 'FactSpendSnapshot2'[Amount] )
+
+    MEASURE 'FactSpendSnapshot2'[Prior Snapshot Spend] =
+        VAR CurrentSnapshot =
+            MAX ( 'DimSnapshot6'[SnapshotDate] )
+        VAR PreviousSnapshot =
+            CALCULATE (
+                MAX ( 'DimSnapshot6'[SnapshotDate] ),
+                FILTER (
+                    ALL ( 'DimSnapshot6'[SnapshotDate] ),
+                    'DimSnapshot6'[SnapshotDate] < CurrentSnapshot
+                )
+            )
+        RETURN
+            CALCULATE (
+                [Cumulative Spend as of Snapshot],
+                REMOVEFILTERS ( 'DimSnapshot6' ),
+                'DimSnapshot6'[SnapshotDate] = PreviousSnapshot
+            )
+
+    MEASURE 'FactSpendSnapshot2'[Weekly Added Spend] =
+        [Cumulative Spend as of Snapshot] - COALESCE ( [Prior Snapshot Spend], 0 )
+
+    MEASURE 'FactSpendSnapshot2'[Weekly Added Spend %] =
+        DIVIDE ( [Weekly Added Spend], [Prior Snapshot Spend] )
+
+    MEASURE 'FactOutsideSpend3'[Outside Spend] =
+        SUM ( 'FactOutsideSpend3'[Amount] )
+
+    MEASURE 'FactOutsideSpend3'[Outside Support Spend] =
+        CALCULATE (
+            [Outside Spend],
+            KEEPFILTERS ( 'FactOutsideSpend3'[SupportOppose] = "Support" )
+        )
+
+    MEASURE 'FactOutsideSpend3'[Outside Oppose Spend] =
+        CALCULATE (
+            [Outside Spend],
+            KEEPFILTERS ( 'FactOutsideSpend3'[SupportOppose] = "Oppose" )
+        )
+
+    MEASURE 'FactOutsideSpend3'[Net Outside Support] =
+        [Outside Support Spend] - [Outside Oppose Spend]
+
+    MEASURE 'BridgeRaceDma21'[District Share of DMA] =
+        DIVIDE (
+            SUM ( 'BridgeRaceDma21'[DistrictHouseholdsInDMA] ),
+            SUM ( 'BridgeRaceDma21'[DMAHouseholds] )
+        )
+
+    MEASURE 'BridgeRaceDma21'[Estimated Broadcast Waste %] =
+        MAX ( 0, 1 - [District Share of DMA] )
+
+    MEASURE 'BridgeRaceDma21'[Estimated Wasted Broadcast $] =
+        [Broadcast Spend] * [Estimated Broadcast Waste %]
+
+    MEASURE 'DimSnapshot6'[Latest Snapshot Date] =
+        MAX ( 'DimSnapshot6'[SnapshotDate] )
+
+    MEASURE 'FactSpendSnapshot2'[Spend Snapshot Rows] =
+        COUNTROWS ( 'FactSpendSnapshot2' )
+
+    MEASURE 'FactSpendCurrent1'[Current Spend Rows] =
+        COUNTROWS ( 'FactSpendCurrent1' )
+
+    MEASURE 'QASnapshotReconciliation31'[Rows Loaded] =
+        SUM ( 'QASnapshotReconciliation31'[RowsLoaded] )
+
+    MEASURE 'QADuplicateKeyCheck35'[Duplicate Key Count] =
+        COUNTROWS ( 'QADuplicateKeyCheck35' )
+
+    MEASURE 'QAMissingFieldChecks36'[Missing / Unknown Field Rows] =
+        SUM ( 'QAMissingFieldChecks36'[MissingOrUnknownRows] )
+
+    MEASURE 'FactOutsideSpend3'[Outside Spend Rows] =
+        COUNTROWS ( 'FactOutsideSpend3' )
+
+    MEASURE 'FactPolWindows4'[Political Windows Loaded] =
+        COUNTROWS ( 'FactPolWindows4' )
+
+    MEASURE 'FactSpendCurrent1'[Prospects In Political Window] =
+        CALCULATE (
+            [Cable Prospects],
+            KEEPFILTERS (
+                'FactPolWindows4'[WindowStatus] IN { "In Window", "Opening Next 30" }
+            )
+        )
+
+    MEASURE 'FactSpendCurrent1'[Cable Opportunity In Window] =
+        CALCULATE (
+            [Cable Opportunity $],
+            KEEPFILTERS (
+                'FactPolWindows4'[WindowStatus] IN { "In Window", "Opening Next 30" }
+            )
+        )
+
+    MEASURE 'DimCivicElection27'[Civic Elections Loaded] =
+        COUNTROWS ( 'DimCivicElection27' )
+
+    MEASURE 'FactCivicContest28'[Civic Contests Loaded] =
+        COUNTROWS ( 'FactCivicContest28' )
+
+    MEASURE 'FactRefreshLog25'[OpenFEC API Rows Fetched] =
+        CALCULATE (
+            SUM ( 'FactRefreshLog25'[RowsFetched] ),
+            'FactRefreshLog25'[SourceType] = "OpenFEC API"
+        )
+
+    MEASURE 'FactRefreshLog25'[Civic API Rows Fetched] =
+        CALCULATE (
+            SUM ( 'FactRefreshLog25'[RowsFetched] ),
+            'FactRefreshLog25'[SourceType] = "Civic API"
+        )
+
+    MEASURE 'BridgeAdvEntity20'[Unmatched Advertiser Count] =
+        CALCULATE (
+            DISTINCTCOUNT ( 'DimAdvertiser7'[AdvertiserKey] ),
+            'BridgeAdvEntity20'[ReviewStatus] = "Unmatched"
+        )
+
+    MEASURE 'QALowConfidenceMatches33'[Low Confidence Match Count] =
+        COUNTROWS ( 'QALowConfidenceMatches33' )
+
+    MEASURE 'FactElectionResults22'[Votes] =
+        SUM ( 'FactElectionResults22'[Votes] )
+
+    MEASURE 'FactElectionResults22'[Cost Per Vote] =
+        DIVIDE ( [Total Spend], [Votes] )
+
+    MEASURE 'FactElectionResults22'[Completed Races] =
+        CALCULATE (
+            DISTINCTCOUNT ( 'FactElectionResults22'[RaceKey] ),
+            'FactElectionResults22'[ResultStatus] = "Completed"
+        )
+
+    MEASURE 'FactSpendCurrent1'[Case Study Score] =
+        VAR spendScale =
+            LOG10 ( [Broadcast + CTV Spend] + 1 )
+        VAR lowCableFactor =
+            MAX (
+                0,
+                1 - DIVIDE ( COALESCE ( [Cable Share %], 0 ), [Selected Cable Share Target] )
+            )
+        VAR houseBonus =
+            IF ( SELECTEDVALUE ( 'DimRaceLevel14'[RaceLevel] ) = "House", 1.25, 1 )
+        RETURN
+            spendScale * lowCableFactor * houseBonus
+
+EVALUATE
+ROW (
+    "Latest Snapshot Date", [Latest Snapshot Date],
+    "Total Spend", [Total Spend],
+    "Broadcast Spend", [Broadcast Spend],
+    "Cable Spend", [Cable Spend],
+    "CTV Spend", [CTV Spend],
+    "Digital Spend", [Digital Spend],
+    "Radio Spend", [Radio Spend],
+    "Cable Share %", [Cable Share %],
+    "Cable Opportunity $", [Cable Opportunity $],
+    "Cable Prospects", [Cable Prospects],
+    "Zero-Cable Advertisers", [Zero-Cable Advertisers],
+    "Political Windows Loaded", [Political Windows Loaded],
+    "Outside Spend", [Outside Spend],
+    "Unmatched Advertiser Count", [Unmatched Advertiser Count]
+)

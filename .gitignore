@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.DS_Store
+~$*
+.venv/
+node_modules/
+
+# Keep live/private data out of GitHub.
+Political Spend Dashboard/data/raw/
+Political Spend Dashboard/data/curated/
+Political Spend Dashboard/data/qa/
+Political Spend Dashboard/outputs/
+powerbi_implementation/data/
+
+# Generated production bundles/workbooks/PBIX files should be deployed through
+# private Microsoft 365 storage, not a public code repo.
+*.pbix
+*.xlsb

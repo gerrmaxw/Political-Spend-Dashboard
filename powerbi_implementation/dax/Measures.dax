@@ -1,0 +1,206 @@
+-- Create these measures on the _Measures table.
+
+Cumulative Spend as of Snapshot =
+SUM ( FactSpendSnapshot[Amount] )
+
+Prior Snapshot Spend =
+VAR CurrentSnapshot = MAX ( DimSnapshot[SnapshotDate] )
+VAR PreviousSnapshot =
+    CALCULATE (
+        MAX ( DimSnapshot[SnapshotDate] ),
+        FILTER ( ALL ( DimSnapshot ), DimSnapshot[SnapshotDate] < CurrentSnapshot )
+    )
+RETURN
+    CALCULATE (
+        [Cumulative Spend as of Snapshot],
+        REMOVEFILTERS ( DimSnapshot ),
+        DimSnapshot[SnapshotDate] = PreviousSnapshot
+    )
+
+Weekly Added Spend =
+[Cumulative Spend as of Snapshot] - COALESCE ( [Prior Snapshot Spend], 0 )
+
+Total Spend =
+SUM ( FactSpendCurrent[Amount] )
+
+Broadcast Spend =
+CALCULATE ( [Total Spend], KEEPFILTERS ( DimMediaType[Media Type] = "Broadcast" ) )
+
+Cable Spend =
+CALCULATE ( [Total Spend], KEEPFILTERS ( DimMediaType[Media Type] = "Cable" ) )
+
+CTV Spend =
+CALCULATE ( [Total Spend], KEEPFILTERS ( DimMediaType[Media Type] = "CTV" ) )
+
+Digital Spend =
+CALCULATE ( [Total Spend], KEEPFILTERS ( DimMediaType[Media Type] = "Digital" ) )
+
+Radio Spend =
+CALCULATE ( [Total Spend], KEEPFILTERS ( DimMediaType[Media Type] = "Radio" ) )
+
+Broadcast + CTV Spend =
+[Broadcast Spend] + [CTV Spend]
+
+Digital + Radio Spend =
+[Digital Spend] + [Radio Spend]
+
+TV Spend =
+[Broadcast Spend] + [Cable Spend] + [CTV Spend]
+
+Cable Share % =
+DIVIDE ( [Cable Spend], [TV Spend] )
+
+Selected TV Spend Floor =
+SELECTEDVALUE ( 'TV Spend Floor Slider'[Value], 11000 )
+
+Selected Cable Share Target =
+SELECTEDVALUE ( 'Cable Share Target Slider'[Value], 0.15 )
+
+Target Cable Spend =
+[TV Spend] * [Selected Cable Share Target]
+
+Cable Opportunity $ =
+MAX ( 0, [Target Cable Spend] - [Cable Spend] )
+
+No Cable Flag =
+IF ( [Broadcast + CTV Spend] > 0 && [Cable Spend] = 0, 1, 0 )
+
+Cable Prospect Flag =
+IF (
+    [Broadcast + CTV Spend] >= [Selected TV Spend Floor]
+        && COALESCE ( [Cable Share %], 0 ) <= [Selected Cable Share Target],
+    1,
+    0
+)
+
+Cable Prospect Label =
+SWITCH (
+    TRUE (),
+    [TV Spend] = 0, "No TV",
+    [Cable Spend] = 0 && [Broadcast + CTV Spend] >= [Selected TV Spend Floor], "Zero Cable",
+    [Cable Prospect Flag] = 1, "Low Cable",
+    [Cable Spend] > 0, "Cable In Mix",
+    "Below Floor"
+)
+
+Zero Cable Count =
+COUNTROWS (
+    FILTER (
+        VALUES ( DimAdvertiser[AdvertiserKey] ),
+        [Cable Prospect Label] = "Zero Cable"
+    )
+)
+
+Zero-Cable Advertisers =
+CALCULATE (
+    DISTINCTCOUNT ( DimAdvertiser[AdvertiserKey] ),
+    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [No Cable Flag] = 1 )
+)
+
+Cable Prospects =
+CALCULATE (
+    DISTINCTCOUNT ( DimAdvertiser[AdvertiserKey] ),
+    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+)
+
+Prospect Total Spend =
+CALCULATE (
+    [Total Spend],
+    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+)
+
+Prospect Broadcast + CTV Spend =
+CALCULATE (
+    [Broadcast + CTV Spend],
+    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+)
+
+Prospect Cable Opportunity $ =
+CALCULATE (
+    [Cable Opportunity $],
+    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+)
+
+Prospect Cable Share % =
+CALCULATE (
+    [Cable Share %],
+    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
+)
+
+Selected Cable Opportunity Floor =
+SELECTEDVALUE ( 'Cable Opportunity Floor Slider'[Value], 25000 )
+
+Meets Cable Opportunity Floor Flag =
+IF ( [Cable Opportunity $] >= [Selected Cable Opportunity Floor], 1, 0 )
+
+District Share of DMA =
+VAR HouseholdShare =
+    DIVIDE (
+        SUM ( BridgeRaceDMA[DistrictHouseholdsInDMA] ),
+        SUM ( BridgeRaceDMA[DMAHouseholds] )
+    )
+VAR EstimatedShare =
+    AVERAGE ( BridgeRaceDMA[DistrictDMAWeight] )
+RETURN
+    COALESCE ( HouseholdShare, EstimatedShare )
+
+Estimated Broadcast Waste % =
+VAR IsHouseRace = SELECTEDVALUE ( DimRace[Office] ) = "House"
+RETURN
+    IF ( IsHouseRace, MAX ( 0, 1 - [District Share of DMA] ) )
+
+Estimated Wasted Broadcast $ =
+[Broadcast Spend] * [Estimated Broadcast Waste %]
+
+Total PAC Spend =
+SUM ( FactFECIndependentExpenditures[Amount] )
+
+PAC Support Spend =
+CALCULATE (
+    [Total PAC Spend],
+    KEEPFILTERS ( FactFECIndependentExpenditures[SupportOppose] = "Support" )
+)
+
+PAC Oppose Spend =
+CALCULATE (
+    [Total PAC Spend],
+    KEEPFILTERS ( FactFECIndependentExpenditures[SupportOppose] = "Oppose" )
+)
+
+PAC Net Support =
+[PAC Support Spend] - [PAC Oppose Spend]
+
+Votes =
+SUM ( FactElectionResults[Votes] )
+
+Vote Share % =
+AVERAGE ( FactElectionResults[VoteShare] )
+
+Cost Per Vote =
+DIVIDE ( [Total Spend], [Votes] )
+
+Completed Race Spend =
+CALCULATE ( [Total Spend], KEEPFILTERS ( DimRace[CompletedFlag] = TRUE () ) )
+
+Last Snapshot Date =
+MAX ( DimSnapshot[SnapshotDate] )
+
+Current Snapshot Rows =
+COUNTROWS ( FactSpendCurrent )
+
+Unmatched Advertiser Rows =
+CALCULATE ( COUNTROWS ( FactSpendCurrent ), FactSpendCurrent[CandidateKey] = "UNMATCHED" )
+
+Unmatched Advertiser % =
+DIVIDE ( [Unmatched Advertiser Rows], [Current Snapshot Rows] )
+
+Total Spend vs Prior Snapshot =
+[Cumulative Spend as of Snapshot] - [Prior Snapshot Spend]
+
+Case Study Score =
+VAR SpendComponent = MIN ( 40, DIVIDE ( [Total Spend], 100000 ) )
+VAR CableDeficitComponent = MIN ( 25, ( 1 - COALESCE ( [Cable Share %], 0 ) ) * 25 )
+VAR WasteComponent = MIN ( 25, COALESCE ( [Estimated Broadcast Waste %], 0 ) * 25 )
+VAR HouseBonus = IF ( SELECTEDVALUE ( DimRace[Office] ) = "House", 10, 0 )
+RETURN
+    SpendComponent + CableDeficitComponent + WasteComponent + HouseBonus

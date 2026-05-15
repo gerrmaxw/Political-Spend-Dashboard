@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1600, initial-scale=1" />
+  <title>Political Spend Dashboard · Comcast Advertising</title>
+  <link rel="stylesheet" href="styles.css?v=completionfields2" />
+  <style>
+    /* Visible fallback if React fails to mount or a runtime error is thrown. */
+    #boot-error {
+      display: none;
+      position: fixed; inset: 0;
+      padding: 40px;
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #FCA5A5;
+      background: #111827;
+      white-space: pre-wrap;
+      overflow: auto;
+      z-index: 9999;
+    }
+    #boot-error h1 { color: #fff; font-size: 16px; margin: 0 0 12px; }
+    #boot-error code { color: #FCD34D; }
+    #boot-error.show { display: block; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="boot-error"></div>
+
+  <script>
+    // Surface any uncaught error so we never just stare at a blank page.
+    window.addEventListener("error", (e) => {
+      const el = document.getElementById("boot-error");
+      if (!el) return;
+      el.classList.add("show");
+      el.textContent = "Dashboard failed to load.\n\n"
+        + (e.error && e.error.stack ? e.error.stack : (e.message || String(e)));
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const el = document.getElementById("boot-error");
+      if (!el) return;
+      el.classList.add("show");
+      el.textContent = "Unhandled promise rejection.\n\n" + (e.reason && e.reason.stack ? e.reason.stack : String(e.reason));
+    });
+  </script>
+
+  <!-- React (production builds for stability) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+
+  <!-- SheetJS — for client-side weekly xlsx uploads -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+
+  <!-- Maintained Comcast market political-window calendar. This replaces the old Civic calendar dependency for page 6. -->
+  <script src="political-windows.bundle.js?v=completionfields2"></script>
+
+  <!-- Real data bundle, generated weekly by build_dashboard_data.py from the curated PowerBI xlsx -->
+  <script src="data.bundle.js?v=completionfields2"></script>
+
+  <!-- CivicAPI: async election result lookup + candidate win/loss enrichment -->
+  <script src="civic-api.js?v=completionfields2"></script>
+
+  <!-- Runtime: formatters, measures, xlsx upload + derived datasets -->
+  <script src="data.js?v=completionfields2"></script>
+
+  <!-- Pre-compiled React components (no babel-standalone — eliminates a
+       potential parse-time failure point on file:// origins). The .jsx
+       sources are kept alongside as the source of truth; rebuild with
+       `npm run build` or the helper script in /tmp/babel-check. -->
+  <script src="components.compiled.js?v=completionfields2"></script>
+  <script src="overview.compiled.js?v=completionfields2"></script>
+  <script src="prospects.compiled.js?v=completionfields2"></script>
+  <script src="trend-detail.compiled.js?v=completionfields2"></script>
+  <script src="race-calendar.compiled.js?v=completionfields2"></script>
+  <script src="pac-completed.compiled.js?v=completionfields2"></script>
+  <script src="casestudy-health.compiled.js?v=completionfields2"></script>
+  <script src="app.compiled.js?v=completionfields2"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+_Measures =
+DATATABLE ( "Measure Table", STRING, { { "_Measures" } } )
+
+TV Spend Floor Slider =
+GENERATESERIES ( 0, 250000, 1000 )
+
+Cable Share Target Slider =
+GENERATESERIES ( 0, 0.5, 0.01 )
+
+Cable Opportunity Floor Slider =
+GENERATESERIES ( 0, 250000, 5000 )
+
+Trend Breakdown =
+{
+    ( "Advertiser", NAMEOF ( DimAdvertiser[Advertiser] ), 0 ),
+    ( "Candidate", NAMEOF ( DimCandidate[CandidateName] ), 1 ),
+    ( "Office", NAMEOF ( DimOffice[Office] ), 2 ),
+    ( "State", NAMEOF ( DimState[State] ), 3 ),
+    ( "DMA", NAMEOF ( DimDMA[DMA] ), 4 ),
+    ( "Race Level", NAMEOF ( DimRaceLevel[RaceLevel] ), 5 ),
+    ( "Party", NAMEOF ( DimParty[Party] ), 6 ),
+    ( "Media Type", NAMEOF ( DimMediaType[MediaType] ), 7 ),
+    ( "Agency", NAMEOF ( DimAgency[Agency] ), 8 )
+}

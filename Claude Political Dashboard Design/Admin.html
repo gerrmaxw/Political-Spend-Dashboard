@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin · Political Spend Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body { background: var(--bg-outspace); color: var(--text-primary); overflow: auto; }
+    .admin-wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; background: var(--bg-page); min-height: 100vh; }
+    .admin-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .admin-header .brand { display: flex; align-items: center; gap: 16px; }
+    .admin-header .brand-logo { height: 28px; }
+    .admin-header .brand-divider { width: 1px; height: 28px; background: var(--border); }
+    .admin-header .title { font-size: 17px; font-weight: 600; color: var(--text-primary); }
+    .admin-header .subtitle { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+    .admin-header .view-link { font-size: 12px; color: var(--blue); text-decoration: none; padding: 6px 12px; border: 1px solid var(--blue); border-radius: 4px; font-weight: 500; }
+    .admin-header .view-link:hover { background: var(--blue-soft); }
+
+    .admin-section { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 20px 22px; margin-bottom: 18px; }
+    .admin-section h2 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+    .admin-section .section-desc { font-size: 11.5px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.45; }
+
+    .drop-zone {
+      border: 2px dashed var(--border-strong);
+      border-radius: 6px;
+      padding: 28px;
+      text-align: center;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .drop-zone.dragging { background: var(--blue-soft); border-color: var(--blue); color: var(--blue-deep); }
+    .drop-zone .dz-headline { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+    .drop-zone .dz-sub { font-size: 11.5px; line-height: 1.5; }
+    .drop-zone input { display: none; }
+
+    .supported-types {
+      margin-top: 14px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px;
+      font-size: 10.5px; color: var(--text-secondary);
+    }
+    .supported-types .chip-st {
+      background: var(--bg-page); border: 1px solid var(--border); border-radius: 3px;
+      padding: 4px 8px; display: flex; align-items: center; gap: 6px;
+    }
+    .supported-types .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+    .file-list { margin-top: 16px; display: flex; flex-direction: column; gap: 4px; }
+    .file-row { display: grid; grid-template-columns: 1fr 220px 90px 80px 24px; gap: 8px; align-items: center; padding: 8px 10px; background: var(--bg-page); border: 1px solid var(--border); border-radius: 3px; font-size: 11.5px; }
+    .file-row .filename { font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-row .type-chip { font-size: 10.5px; padding: 2px 8px; border-radius: 10px; background: var(--blue-soft); color: var(--blue-deep); font-weight: 600; text-align: center; }
+    .file-row .type-chip.unknown { background: #FEF3C7; color: #854D0E; }
+    .file-row .type-chip.error   { background: var(--red-soft); color: var(--red); }
+    .file-row .row-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; }
+    .file-row .size { color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+    .file-row .remove { color: var(--text-muted); cursor: pointer; text-align: center; }
+    .file-row .remove:hover { color: var(--red); }
+
+    .actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid; }
+    .btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn-primary:hover { background: var(--blue-deep); border-color: var(--blue-deep); }
+    .btn-primary:disabled { background: var(--text-muted); border-color: var(--text-muted); cursor: not-allowed; }
+    .btn-secondary { background: #fff; border-color: var(--border-strong); color: var(--text-primary); }
+    .btn-secondary:hover { background: var(--bg-page); }
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--text-secondary); }
+
+    .progress-log { background: #0F172A; color: #94E5C5; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; padding: 12px 14px; border-radius: 4px; max-height: 280px; overflow-y: auto; white-space: pre-wrap; line-height: 1.55; }
+    .progress-log:empty { display: none; }
+    .progress-log .err { color: #FCA5A5; }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 6px; }
+    .stat-card { background: var(--bg-page); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; }
+    .stat-card .stat-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat-card .stat-value { font-size: 18px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .stat-card .stat-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+
+    .session-banner { background: #ECFDF5; border: 1px solid var(--green); color: #066B3A; padding: 10px 14px; border-radius: 4px; font-size: 12px; margin-top: 10px; }
+    .session-banner.warn { background: #FEF3C7; border-color: var(--yellow); color: #854D0E; }
+    .session-banner strong { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap">
+    <div class="admin-header">
+      <div class="brand">
+        <img class="brand-logo" src="assets/comcast-advertising-logo.png" alt="Comcast Advertising" />
+        <div class="brand-divider"></div>
+        <div>
+          <div class="title">Admin · Political Spend Dashboard</div>
+          <div class="subtitle">Drop in any combination of CSV / xlsx source files — the pipeline auto-detects each one and aggregates them together.</div>
+        </div>
+      </div>
+      <a class="view-link" href="Political Dashboard.html">Open viewer →</a>
+    </div>
+
+    <div class="admin-section">
+      <h2>1 · Drop source files</h2>
+      <div class="section-desc">
+        Drop one or more CSV / xlsx exports. The pipeline fingerprints each file by its column headers and routes it to the right aggregator. At least one <strong>spine</strong> file (Curated PBI or Vivvix Home_Advertiser) is required; everything else is optional.
+      </div>
+      <label class="drop-zone" id="drop-zone">
+        <div class="dz-headline">Drop files here · or click to browse</div>
+        <div class="dz-sub">CSV / xlsx · multiple files at once · order doesn't matter</div>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xlsm,.xls" multiple />
+      </label>
+
+      <div class="supported-types">
+        <div class="chip-st"><span class="dot"></span>Curated PBI snapshot</div>
+        <div class="chip-st"><span class="dot"></span>Vivvix Home Advertiser</div>
+        <div class="chip-st"><span class="dot"></span>Cross tab — Digital</div>
+        <div class="chip-st"><span class="dot"></span>DEV — Cash on Hand</div>
+        <div class="chip-st"><span class="dot"></span>FEC Candidate Summary</div>
+        <div class="chip-st"><span class="dot"></span>FEC Committee Summary</div>
+        <div class="chip-st"><span class="dot"></span>FEC Independent Expenditures</div>
+        <div class="chip-st"><span class="dot"></span>FEC Electioneering Comm</div>
+        <div class="chip-st"><span class="dot"></span>FEC Communication Costs</div>
+        <div class="chip-st"><span class="dot"></span>FEC Leadership PACs</div>
+        <div class="chip-st"><span class="dot"></span>Lobbyist disclosures</div>
+      </div>
+
+      <div class="file-list" id="file-list"></div>
+    </div>
+
+    <div class="admin-section">
+      <h2>2 · Build &amp; deploy</h2>
+      <div class="section-desc">
+        Build the dataset client-side, preview the merge stats, then push it to this device's browser database (the viewer reads it on next load) or download <code>data.bundle.js</code> to deploy permanently into the static site.
+      </div>
+      <div class="actions">
+        <button id="btn-build"    class="btn btn-primary"   disabled>Build dataset</button>
+        <button id="btn-apply"    class="btn btn-secondary" disabled>Apply to viewer (this device)</button>
+        <button id="btn-download" class="btn btn-secondary" disabled>Download data.bundle.js</button>
+        <button id="btn-reset"    class="btn btn-ghost">Reset to default</button>
+      </div>
+      <div id="session-banner" class="session-banner" style="display:none"></div>
+      <div id="progress-log"   class="progress-log"></div>
+    </div>
+
+    <div class="admin-section" id="stats-section" style="display:none">
+      <h2>3 · Pipeline summary</h2>
+      <div class="section-desc">Latest run statistics.</div>
+      <div class="stat-grid" id="stat-grid"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+  <script src="etl.js"></script>
+  <script>
+  (function () {
+    const state = { files: [], bundle: null };
+    const DB_NAME = "PoliticalSpendDashboard";
+    const DB_VERSION = 1;
+    const DB_STORE = "bundles";
+    const DB_KEY = "pbBundle";
+    const log = document.getElementById("progress-log");
+    const banner = document.getElementById("session-banner");
+    const statsSection = document.getElementById("stats-section");
+    const statGrid = document.getElementById("stat-grid");
+    const dropZone = document.getElementById("drop-zone");
+    const fileInput = document.getElementById("file-input");
+    const fileList = document.getElementById("file-list");
+
+    function openBundleDB() {
+      return new Promise((resolve, reject) => {
+        if (!("indexedDB" in window)) {
+          reject(new Error("IndexedDB is not available in this browser."));
+          return;
+        }
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE, { keyPath: "id" });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error("Could not open dashboard browser database."));
+      });
+    }
+
+    async function saveBundleToDB(bundle) {
+      const db = await openBundleDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readwrite");
+        tx.objectStore(DB_STORE).put({
+          id: DB_KEY,
+          bundle,
+          savedAt: new Date().toISOString(),
+        });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error || new Error("Could not save bundle.")); };
+      });
+    }
+
+    async function loadBundleFromDB() {
+      const db = await openBundleDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readonly");
+        const req = tx.objectStore(DB_STORE).get(DB_KEY);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error || new Error("Could not read stored bundle."));
+        tx.oncomplete = () => db.close();
+      });
+    }
+
+    async function clearBundleDB() {
+      try {
+        const db = await openBundleDB();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, "readwrite");
+          tx.objectStore(DB_STORE).delete(DB_KEY);
+          tx.oncomplete = () => { db.close(); resolve(); };
+          tx.onerror = () => { db.close(); reject(tx.error || new Error("Could not clear stored bundle.")); };
+        });
+      } catch (e) {
+        // IndexedDB might not exist yet; localStorage clearing below is enough.
+      }
+    }
+
+    async function refreshSessionBanner() {
+      try {
+        const record = await loadBundleFromDB().catch(() => null);
+        if (record && record.bundle) {
+          const parsed = record.bundle;
+          banner.classList.remove("warn");
+          banner.style.display = "block";
+          banner.innerHTML = `<strong>Custom bundle active</strong> · ${parsed.advertisers.length.toLocaleString()} rows · snapshot ${parsed.snapshotDate}. Saved in browser database; the viewer will use this until you reset.`;
+          return;
+        }
+
+        const stored = localStorage.getItem("pbBundle");
+        if (!stored) { banner.style.display = "none"; return; }
+        const parsed = JSON.parse(stored);
+        banner.classList.remove("warn");
+        banner.style.display = "block";
+        banner.innerHTML = `<strong>Legacy custom bundle active</strong> · ${parsed.advertisers.length.toLocaleString()} rows · snapshot ${parsed.snapshotDate}. Reset or re-apply to move it into browser database storage.`;
+      } catch (e) {
+        banner.classList.add("warn");
+        banner.style.display = "block";
+        banner.innerHTML = `<strong>Stored bundle could not be read</strong> — click Reset to clear it.`;
+      }
+    }
+
+    function appendLog(msg, isErr) {
+      const line = document.createElement("div");
+      if (isErr) line.className = "err";
+      line.textContent = msg;
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function notifyViewer(type) {
+      try {
+        if (!("BroadcastChannel" in window)) return;
+        const channel = new BroadcastChannel("political-dashboard");
+        channel.postMessage({ type });
+        channel.close();
+      } catch (e) {
+        // Non-critical; the viewer can still be refreshed manually.
+      }
+    }
+
+    async function addFiles(fileList) {
+      const files = Array.from(fileList);
+      for (const f of files) {
+        const entry = { file: f, detection: null, error: null };
+        state.files.push(entry);
+        try {
+          entry.detection = await window.pbETL.detectFile(f);
+        } catch (e) {
+          entry.error = e.message || String(e);
+        }
+      }
+      renderFileList();
+      document.getElementById("btn-build").disabled = !hasSpine();
+    }
+
+    function hasSpine() {
+      return state.files.some((e) => e.detection && (
+        e.detection.type === "curated_pbi" || e.detection.type === "vivvix_home_advertiser"
+      ));
+    }
+
+    function renderFileList() {
+      fileList.innerHTML = "";
+      state.files.forEach((entry, idx) => {
+        const row = document.createElement("div");
+        row.className = "file-row";
+        const det = entry.detection;
+        const typeClass = entry.error ? "error" : (!det || det.type === "unknown" ? "unknown" : "");
+        const typeLabel = entry.error ? "ERROR"
+          : !det ? "Detecting…"
+          : det.type === "unknown" ? "Unknown type"
+          : det.label;
+        row.innerHTML = `
+          <span class="filename" title="${entry.file.name}">${entry.file.name}</span>
+          <span class="type-chip ${typeClass}">${typeLabel}</span>
+          <span class="row-count">${det && det.rowCount ? det.rowCount.toLocaleString() + " rows" : ""}</span>
+          <span class="size">${(entry.file.size / 1024).toFixed(0)} KB</span>
+          <span class="remove" data-i="${idx}" title="Remove">×</span>`;
+        fileList.appendChild(row);
+      });
+      fileList.querySelectorAll(".remove").forEach((el) => {
+        el.addEventListener("click", () => {
+          const i = +el.getAttribute("data-i");
+          state.files.splice(i, 1);
+          renderFileList();
+          document.getElementById("btn-build").disabled = !hasSpine();
+        });
+      });
+    }
+
+    // Drag & drop
+    ["dragenter", "dragover"].forEach((ev) => {
+      dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.add("dragging"); });
+    });
+    ["dragleave", "drop"].forEach((ev) => {
+      dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.remove("dragging"); });
+    });
+    dropZone.addEventListener("drop", (e) => {
+      if (e.dataTransfer.files && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files && fileInput.files.length) addFiles(fileInput.files);
+      fileInput.value = "";
+    });
+
+    document.getElementById("btn-build").addEventListener("click", async () => {
+      log.innerHTML = "";
+      document.getElementById("btn-build").disabled = true;
+      try {
+        const ok = state.files.filter((e) => !e.error).map((e) => e.file);
+        const result = await window.pbETL.buildBundle({
+          files: ok,
+          onProgress: (m) => appendLog("• " + m),
+        });
+        state.bundle = result.bundle;
+        document.getElementById("btn-apply").disabled = false;
+        document.getElementById("btn-download").disabled = false;
+        renderStats(result);
+        appendLog("✓ Done. Apply to viewer, or download to deploy.");
+      } catch (e) {
+        appendLog("ERROR · " + (e.message || String(e)), true);
+        console.error(e);
+      } finally {
+        document.getElementById("btn-build").disabled = !hasSpine();
+      }
+    });
+
+    function renderStats(result) {
+      const b = result.bundle, s = result.stats || {};
+      const totalSpend  = b.advertisers.reduce((a, r) => a + r.total, 0);
+      const totalDigital= b.advertisers.reduce((a, r) => a + (r.digital || 0), 0);
+      const totalCable  = b.advertisers.reduce((a, r) => a + (r.cable   || 0), 0);
+      const withCOH     = b.advertisers.filter((r) => r.cashOnHand).length;
+      statGrid.innerHTML = "";
+      const cards = [
+        ["Rows",            b.advertisers.length.toLocaleString(), "Advertiser × market entries"],
+        ["Snapshot date",   b.snapshotDate || "—", ""],
+        ["Total spend",     "$" + fmt(totalSpend),   "All media types"],
+        ["Total digital",   "$" + fmt(totalDigital), "Addressable rows"],
+        ["Total cable",     "$" + fmt(totalCable),   "From spine"],
+        ["Digital matched", (s.digitalMatched || 0) + " / " + ((s.digitalMatched || 0) + (s.digitalUnmatched || 0)),
+          "$" + fmt(s.digitalMatchedTotal) + " merged · $" + fmt(s.digitalUnmatchedTotal) + " new"],
+        ["COH attached",    (s.cohMatched || 0).toLocaleString() + " / " + (s.cohTotal || 0).toLocaleString(),
+          withCOH.toLocaleString() + " rows carry COH"],
+        ["PAC rows",        (s.pacRows || 0).toLocaleString(),       "FEC IE + electioneering + comm costs"],
+        ["Leadership PACs", (s.leadershipPacs || 0).toLocaleString(), ""],
+      ];
+      cards.forEach(([label, value, sub]) => {
+        const div = document.createElement("div");
+        div.className = "stat-card";
+        div.innerHTML = `<div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-sub">${sub}</div>`;
+        statGrid.appendChild(div);
+      });
+      statsSection.style.display = "block";
+    }
+    function fmt(v) { return Math.round(v || 0).toLocaleString(); }
+
+    document.getElementById("btn-apply").addEventListener("click", async () => {
+      if (!state.bundle) return;
+      try {
+        localStorage.removeItem("pbBundle");
+        await saveBundleToDB(state.bundle);
+        notifyViewer("pbBundleApplied");
+        appendLog("✓ Bundle saved to browser database. Open or refresh the viewer to see it.");
+        await refreshSessionBanner();
+      } catch (e) {
+        appendLog("ERROR saving to browser database: " + e.message, true);
+        try {
+          localStorage.setItem("pbBundle", JSON.stringify(state.bundle));
+          appendLog("✓ Fallback: bundle saved to localStorage. Open the viewer to see it.");
+          await refreshSessionBanner();
+        } catch (fallbackError) {
+          appendLog("ERROR fallback localStorage also failed: " + fallbackError.message, true);
+          appendLog("Use Download data.bundle.js, then replace the static data.bundle.js file.", true);
+        }
+      }
+    });
+
+    document.getElementById("btn-download").addEventListener("click", () => {
+      if (!state.bundle) return;
+      const body = "// Auto-generated by Admin.html — replace data.bundle.js in the static site.\nwindow.__pbBundle = " + JSON.stringify(state.bundle) + ";";
+      const blob = new Blob([body], { type: "application/javascript" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "data.bundle.js"; a.click();
+      URL.revokeObjectURL(url);
+      appendLog("⇣ Downloaded data.bundle.js (" + (blob.size / 1024).toFixed(0) + " KB).");
+    });
+
+    document.getElementById("btn-reset").addEventListener("click", async () => {
+      localStorage.removeItem("pbBundle");
+      await clearBundleDB();
+      notifyViewer("pbBundleReset");
+      appendLog("✓ Reset. Viewer will fall back to the bundled data on next load.");
+      await refreshSessionBanner();
+    });
+
+    refreshSessionBanner();
+  })();
+  </script>
+</body>
+</html>

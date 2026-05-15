@@ -1,0 +1,51 @@
+Create single-direction one-to-many relationships:
+
+DimAdvertiser[AdvertiserKey] -> FactSpendCurrent[AdvertiserKey]
+DimAdvertiser[AdvertiserKey] -> FactSpendSnapshot[AdvertiserKey]
+DimAgency[AgencyKey] -> FactSpendCurrent[AgencyKey]
+DimAgency[AgencyKey] -> FactSpendSnapshot[AgencyKey]
+DimMediaType[MediaTypeKey] -> FactSpendCurrent[MediaTypeKey]
+DimMediaType[MediaTypeKey] -> FactSpendSnapshot[MediaTypeKey]
+DimState[StateKey] -> FactSpendCurrent[StateKey]
+DimState[StateKey] -> FactSpendSnapshot[StateKey]
+DimDMA[DMAKey] -> FactSpendCurrent[DMAKey]
+DimDMA[DMAKey] -> FactSpendSnapshot[DMAKey]
+DimOffice[OfficeKey] -> FactSpendCurrent[OfficeKey]
+DimOffice[OfficeKey] -> FactSpendSnapshot[OfficeKey]
+DimRaceLevel[RaceLevelKey] -> FactSpendCurrent[RaceLevelKey]
+DimRaceLevel[RaceLevelKey] -> FactSpendSnapshot[RaceLevelKey]
+DimParty[PartyKey] -> FactSpendCurrent[PartyKey]
+DimParty[PartyKey] -> FactSpendSnapshot[PartyKey]
+DimStation[StationKey] -> FactSpendCurrent[StationKey]
+DimStation[StationKey] -> FactSpendSnapshot[StationKey]
+DimNetwork[NetworkKey] -> FactSpendCurrent[NetworkKey]
+DimNetwork[NetworkKey] -> FactSpendSnapshot[NetworkKey]
+DimSnapshot[SnapshotDate] -> FactSpendSnapshot[SnapshotDate]
+
+DimAdvertiser[AdvertiserKey] -> BridgeAdvertiserEntity[AdvertiserKey]
+DimCandidate[CandidateKey] -> BridgeAdvertiserEntity[CandidateKey]
+DimCommittee[CommitteeKey] -> BridgeAdvertiserEntity[CommitteeKey]
+DimRace[RaceKey] -> BridgeAdvertiserEntity[RaceKey]
+
+DimCommittee[CommitteeKey] -> FactOutsideSpend[CommitteeKey]
+DimCandidate[CandidateKey] -> FactOutsideSpend[CandidateKey]
+DimRace[RaceKey] -> FactOutsideSpend[RaceKey]
+DimState[StateKey] -> FactOutsideSpend[StateKey]
+
+DimState[StateKey] -> FactPoliticalWindows[StateKey]
+DimDMA[DMAKey] -> FactPoliticalWindows[DMAKey]
+
+DimCandidate[CandidateKey] -> FactCandidateFinance[CandidateKey]
+DimRace[RaceKey] -> BridgeRaceDMA[RaceKey]
+DimState[StateKey] -> BridgeRaceDMA[StateKey]
+DimDMA[DMAKey] -> BridgeRaceDMA[DMAKey]
+
+DimRace[RaceKey] -> FactElectionResults[RaceKey]
+DimCandidate[CandidateKey] -> FactElectionResults[CandidateKey]
+
+DimCivicElection[CivicElectionKey] -> FactCivicContest[CivicElectionKey]
+DimCivicElection[CivicElectionKey] -> DimCivicCandidate[CivicElectionKey]
+DimCivicElection[CivicElectionKey] -> FactCivicPollingLocation[CivicElectionKey]
+FactCivicContest[CivicContestKey] -> DimCivicCandidate[CivicContestKey]
+
+DimDataSource[SourceName] -> FactRefreshLog[SourceName]

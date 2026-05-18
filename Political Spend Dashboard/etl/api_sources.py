@@ -210,6 +210,122 @@ def normalize_openfec_committees(records: list[dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
+def normalize_openfec_electioneering(records: list[dict[str, Any]]) -> pd.DataFrame:
+    columns = [
+        "CANDIDATE_ID",
+        "CANDIDATE_NAME",
+        "CANDIDATE_OFFICE",
+        "CANDIDATE_STATE",
+        "CANDIDATE_DISTRICT",
+        "COMMITTEE_ID",
+        "COMMITTEE_NAME",
+        "SB_IMAGE_NUM",
+        "PAYEE_NAME",
+        "PAYEE_STREET",
+        "PAYEE_CITY",
+        "PAYEE_STATE",
+        "DISBURSEMENT_DESCRIPTION",
+        "DISBURSEMENT_DATE",
+        "COMMUNICATION_DATE",
+        "PUBLIC_DISBURSEMENT_DATE",
+        "REPORTED_DISBURSEMENT_AMOUNT",
+        "NUMBER_OF_CANDIDATES",
+        "CALCULATED_CANDIDATE_SHARE",
+        "SourceSystem",
+    ]
+    rows = []
+    for record in records:
+        rows.append(
+            {
+                "CANDIDATE_ID": clean_text(get_first(record, "candidate_id")),
+                "CANDIDATE_NAME": clean_text(get_first(record, "candidate_name")),
+                "CANDIDATE_OFFICE": clean_text(get_first(record, "candidate_office")),
+                "CANDIDATE_STATE": clean_text(get_first(record, "candidate_office_state", "candidate_state")),
+                "CANDIDATE_DISTRICT": clean_text(get_first(record, "candidate_office_district", "candidate_district")),
+                "COMMITTEE_ID": clean_text(get_first(record, "committee_id")),
+                "COMMITTEE_NAME": clean_text(get_first(record, "committee_name")),
+                "SB_IMAGE_NUM": clean_text(get_first(record, "sb_image_num", "image_number")),
+                "PAYEE_NAME": clean_text(get_first(record, "payee_name")),
+                "PAYEE_STREET": clean_text(get_first(record, "payee_street_1", "payee_street")),
+                "PAYEE_CITY": clean_text(get_first(record, "payee_city")),
+                "PAYEE_STATE": clean_text(get_first(record, "payee_state")),
+                "DISBURSEMENT_DESCRIPTION": clean_text(get_first(record, "disbursement_description", "purpose_description")),
+                "DISBURSEMENT_DATE": to_date(get_first(record, "disbursement_date")),
+                "COMMUNICATION_DATE": to_date(get_first(record, "communication_date")),
+                "PUBLIC_DISBURSEMENT_DATE": to_date(get_first(record, "public_distribution_date", "public_disbursement_date")),
+                "REPORTED_DISBURSEMENT_AMOUNT": to_number(get_first(record, "disbursement_amount", "reported_disbursement_amount")),
+                "NUMBER_OF_CANDIDATES": to_number(get_first(record, "number_of_candidates")),
+                "CALCULATED_CANDIDATE_SHARE": to_number(get_first(record, "calculated_candidate_share")),
+                "SourceSystem": "OpenFEC API",
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
+
+
+def normalize_openfec_leadership_pacs(records: list[dict[str, Any]]) -> pd.DataFrame:
+    columns = [
+        "Committee_Id",
+        "Committee_Name",
+        "Link_Image",
+        "Sponsor_Name",
+        "Cash_on_Hand",
+        "Coverage_End_Date",
+        "Total_Disbursement",
+        "Total_Receipt",
+        "SourceSystem",
+    ]
+    rows = []
+    for record in records:
+        committee_id = clean_text(get_first(record, "committee_id"))
+        sponsor = ""
+        sponsor_candidates = record.get("sponsor_candidate_list") or []
+        if sponsor_candidates:
+            first = sponsor_candidates[0] or {}
+            sponsor = clean_text(first.get("candidate_name") or first.get("name"))
+        if not sponsor:
+            sponsor = clean_text(get_first(record, "sponsor_candidate_name", "sponsor_name"))
+        rows.append(
+            {
+                "Committee_Id": committee_id,
+                "Committee_Name": clean_text(get_first(record, "name", "committee_name")),
+                "Link_Image": f"http://docquery.fec.gov/cgi-bin/fecimg/?{committee_id}" if committee_id else "",
+                "Sponsor_Name": sponsor,
+                "Cash_on_Hand": to_number(get_first(record, "cash_on_hand_end_period", "cash_on_hand")),
+                "Coverage_End_Date": to_date(get_first(record, "coverage_end_date", "last_report_year_total_disbursements_end_date")),
+                "Total_Disbursement": to_number(get_first(record, "disbursements", "total_disbursements")),
+                "Total_Receipt": to_number(get_first(record, "receipts", "total_receipts")),
+                "SourceSystem": "OpenFEC API",
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
+
+
+def normalize_openfec_lobbyist_pacs(records: list[dict[str, Any]]) -> pd.DataFrame:
+    columns = [
+        "Link_Image",
+        "Committee_Name",
+        "Committee_Id",
+        "Date_Filed",
+        "Is_Lobbyist",
+        "SourceSystem",
+    ]
+    rows = []
+    for record in records:
+        committee_id = clean_text(get_first(record, "committee_id"))
+        last_file_date = to_date(get_first(record, "last_file_date", "last_f1_date", "first_file_date"))
+        rows.append(
+            {
+                "Link_Image": f"http://docquery.fec.gov/cgi-bin/fecimg/?{committee_id}" if committee_id else "",
+                "Committee_Name": clean_text(get_first(record, "name", "committee_name")),
+                "Committee_Id": committee_id,
+                "Date_Filed": last_file_date,
+                "Is_Lobbyist": "Y",
+                "SourceSystem": "OpenFEC API",
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
+
+
 def normalize_openfec_independent_expenditures(records: list[dict[str, Any]]) -> pd.DataFrame:
     columns = [
         "spe_id",
@@ -270,6 +386,27 @@ def refresh_fec_api_sources() -> pd.DataFrame:
             {"two_year_transaction_period": CYCLE, "sort": "-expenditure_date"},
             normalize_openfec_independent_expenditures,
             f"api_independent_expenditure_{CYCLE}.csv",
+        ),
+        (
+            "OpenFEC Electioneering Communications",
+            "electioneering/",
+            {"cycle": CYCLE, "sort": "-disbursement_date"},
+            normalize_openfec_electioneering,
+            f"api_electioneering_communications_{CYCLE}.csv",
+        ),
+        (
+            "OpenFEC Leadership PACs",
+            "committees/",
+            {"cycle": CYCLE, "organization_type": "L", "designation": "D"},
+            normalize_openfec_leadership_pacs,
+            f"api_leadership_pacs_{CYCLE}.csv",
+        ),
+        (
+            "OpenFEC Lobbyist Registrant PACs",
+            "committees/",
+            {"cycle": CYCLE, "lobbyist_registrant_pac": "true"},
+            normalize_openfec_lobbyist_pacs,
+            f"api_lobbyist_pacs_{CYCLE}.csv",
         ),
     ]
 
@@ -635,4 +772,3 @@ def read_civic_tables() -> dict[str, pd.DataFrame]:
         if path.exists():
             tables[table] = pd.read_csv(path, dtype=str, keep_default_na=False)
     return tables
-

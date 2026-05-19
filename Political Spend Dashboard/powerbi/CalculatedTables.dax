@@ -7,9 +7,6 @@ GENERATESERIES ( 0, 250000, 1000 )
 Cable Share Target Slider =
 GENERATESERIES ( 0, 0.5, 0.01 )
 
-Cable Opportunity Floor Slider =
-GENERATESERIES ( 0, 250000, 5000 )
-
 Trend Breakdown =
 {
     ( "Advertiser", NAMEOF ( DimAdvertiser[Advertiser] ), 0 ),

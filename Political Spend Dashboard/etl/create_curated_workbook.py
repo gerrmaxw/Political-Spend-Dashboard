@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+from pandas.errors import EmptyDataError
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -14,9 +15,7 @@ from config import BASE_DIR, CURATED_DIR, QA_DIR, REFRESH_DATE
 
 
 OUTPUT_DIR = BASE_DIR / "outputs"
-OUTPUT_FILE = OUTPUT_DIR / f"Political_Spend_Curated_Model_{REFRESH_DATE}.xlsx"
-TABLE_OUTPUT_FILE = OUTPUT_DIR / f"Political_Spend_Curated_Model_{REFRESH_DATE}_PowerBI_Tables.xlsx"
-NAMED_TABLES_OUTPUT_FILE = OUTPUT_DIR / f"Political_Spend_Curated_Model_{REFRESH_DATE}_PowerBI_NamedTables.xlsx"
+OUTPUT_FILE = OUTPUT_DIR / "PoliticalSpendDashboard.xlsx"
 
 CORE_TABLES = [
     "fact_spend_current",
@@ -48,7 +47,6 @@ CORE_TABLES = [
     "dim_civic_election",
     "fact_civic_contest",
     "dim_civic_candidate",
-    "fact_civic_polling_location",
 ]
 
 QA_TABLES = [
@@ -60,6 +58,31 @@ QA_TABLES = [
     "missing_field_checks",
     "market_scope_exclusions",
 ]
+
+EMPTY_TABLE_COLUMNS = {
+    "fact_outside_spend": [
+        "OutsideSpendKey",
+        "SourceType",
+        "CommitteeKey",
+        "CommitteeName",
+        "CandidateKey",
+        "CandidateName",
+        "RaceKey",
+        "Office",
+        "OfficeCode",
+        "StateKey",
+        "District",
+        "ElectionType",
+        "SpendDate",
+        "Amount",
+        "SupportOppose",
+        "Purpose",
+        "Payee",
+        "FileNumber",
+        "TransactionID",
+        "ImageNumber",
+    ],
+}
 
 
 def safe_sheet_name(name: str, used: set[str]) -> str:
@@ -114,10 +137,13 @@ def csv_row_count(path: Path) -> int:
     return max(rows - 1, 0)
 
 
-def read_csv(path: Path) -> pd.DataFrame:
+def read_csv(path: Path, columns: list[str] | None = None) -> pd.DataFrame:
     if not path.exists():
-        return pd.DataFrame()
-    return pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False)
+        return pd.DataFrame(columns=columns or [])
+    try:
+        return pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False)
+    except EmptyDataError:
+        return pd.DataFrame(columns=columns or [])
 
 
 def add_dataframe_sheet(
@@ -240,23 +266,17 @@ def build_workbook(*, prefix_sheet_names: bool = False) -> Workbook:
     add_summary_sheet(wb, table_paths)
 
     for table_name, path in table_paths:
-        df = read_csv(path)
+        df = read_csv(path, EMPTY_TABLE_COLUMNS.get(table_name))
         add_dataframe_sheet(wb, table_name, df, used_sheets, used_tables, prefix_sheet_names=prefix_sheet_names)
 
     return wb
 
 
 def main() -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     wb = build_workbook()
     wb.save(OUTPUT_FILE)
-    wb.save(TABLE_OUTPUT_FILE)
-
-    named_wb = build_workbook(prefix_sheet_names=True)
-    named_wb.save(NAMED_TABLES_OUTPUT_FILE)
-
     print(OUTPUT_FILE)
-    print(TABLE_OUTPUT_FILE)
-    print(NAMED_TABLES_OUTPUT_FILE)
 
 
 if __name__ == "__main__":

@@ -5,17 +5,19 @@ import hashlib
 import os
 import re
 import shutil
+import time
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import date
 from difflib import SequenceMatcher
 from pathlib import Path
 
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 from config import (
     BASE_DIR,
     CASE_STUDY_NOTES,
-    CIVIC_ADDRESS_TARGETS,
     CIVIC_API_DIR,
     CONTROL_DIR,
     CURATED_DIR,
@@ -29,7 +31,6 @@ from config import (
     FEC_DIR,
     MAPPING_OVERRIDES,
     MARKET_DMA_CROSSWALK,
-    CIVIC_API_KEY_ENV,
     POWERBI_DIR,
     QA_DIR,
     RACE_MASTER_MANUAL,
@@ -52,6 +53,41 @@ SUPPORT_MAP = {"S": "Support", "O": "Oppose", "SUPPORT": "Support", "OPPOSE": "O
 UNKNOWN_CANDIDATE = "Unknown"
 UNKNOWN_COMMITTEE = "Unknown"
 UNKNOWN_RACE = "Unknown"
+FACT_OUTSIDE_SPEND_COLUMNS = [
+    "OutsideSpendKey",
+    "SourceType",
+    "CommitteeKey",
+    "CommitteeName",
+    "CandidateKey",
+    "CandidateName",
+    "RaceKey",
+    "Office",
+    "OfficeCode",
+    "StateKey",
+    "District",
+    "ElectionType",
+    "SpendDate",
+    "Amount",
+    "SupportOppose",
+    "Purpose",
+    "Payee",
+    "FileNumber",
+    "TransactionID",
+    "ImageNumber",
+]
+SPEND_ACTIVITY_COLUMNS = [
+    "SpendActivityKey",
+    "Advertiser",
+    "AdvertiserKey",
+    "State",
+    "StateKey",
+    "DMA",
+    "DMAKey",
+    "MediaType",
+    "MediaTypeKey",
+    "WeekOfSpendDate",
+    "GrossSpending",
+]
 US_STATE_ABBR = {
     "AL",
     "AK",
@@ -126,7 +162,21 @@ MARKET_ALIASES = {
 def safe_read_csv(path: Path, **kwargs) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
-    return pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False, **kwargs)
+    try:
+        return pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False, **kwargs)
+    except EmptyDataError:
+        return pd.DataFrame()
+
+
+def safe_read_spend(path: Path, **kwargs) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    if path.suffix.lower() == ".csv":
+        try:
+            return pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False, **kwargs)
+        except EmptyDataError:
+            return pd.DataFrame()
+    return pd.read_excel(path, dtype=str, keep_default_na=False, **kwargs)
 
 
 def safe_read_excel(path: Path, **kwargs) -> pd.DataFrame:
@@ -238,24 +288,24 @@ def write_excel(path: Path, sheets: dict[str, pd.DataFrame]) -> None:
 
 def copy_source_files() -> None:
     copy_plan = {
-        "spend_snapshot": SPEND_DIR / "2026-05-13_Home_Advertiser_data_5.xlsx",
-        "spend_activity": SPEND_ACTIVITY_DIR / "Cross tab_data_1.xlsx",
-        "candidate_summary": FEC_DIR / "candidate_summary_2026.csv",
-        "independent_expenditure_csv": FEC_DIR / "independent_expenditure_2026.csv",
-        "independent_expenditure_xlsx": FEC_DIR / "independent_expenditure_2026.xlsx",
-        "committee_summary": FEC_DIR / "committee_summary_2026.csv",
-        "electioneering": FEC_DIR / "ElectioneeringComm_2026.csv",
-        "leadership": FEC_DIR / "leadership2026.csv",
-        "lobbyist": FEC_DIR / "lobbyist.csv",
-        "communication_costs": FEC_DIR / "CommunicationCosts_2026.csv",
-        "dev_cash_on_hand": FEC_DIR / "DEV_cash_on_hand_data.xlsx",
-        "political_windows": WINDOWS_DIR / "Political Windows by Market.xlsx",
+        "spend_snapshot": SPEND_DIR,
+        "spend_activity": SPEND_ACTIVITY_DIR,
+        "candidate_summary": FEC_DIR,
+        "independent_expenditure_csv": FEC_DIR,
+        "independent_expenditure_xlsx": FEC_DIR,
+        "committee_summary": FEC_DIR,
+        "electioneering": FEC_DIR,
+        "leadership": FEC_DIR,
+        "lobbyist": FEC_DIR,
+        "communication_costs": FEC_DIR,
+        "dev_cash_on_hand": FEC_DIR,
+        "political_windows": WINDOWS_DIR,
     }
-    for key, dest in copy_plan.items():
+    for key, dest_dir in copy_plan.items():
         src = SOURCE_FILES.get(key)
         if src and src.exists():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest_dir / src.name)
 
 
 def create_control_files() -> None:
@@ -263,8 +313,9 @@ def create_control_files() -> None:
         manifest = pd.read_excel(SNAPSHOT_MANIFEST, dtype=str).fillna("")
     else:
         manifest = pd.DataFrame(columns=["SourceFile", "SnapshotDate", "Cycle", "IncludeFlag", "Notes"])
-    source_file = "2026-05-13_Home_Advertiser_data_5.xlsx"
-    if not (manifest.get("SourceFile", pd.Series(dtype=str)) == source_file).any():
+    spend_src = SOURCE_FILES.get("spend_snapshot")
+    source_file = spend_src.name if spend_src else ""
+    if source_file and not (manifest.get("SourceFile", pd.Series(dtype=str)) == source_file).any():
         manifest = pd.concat(
             [
                 manifest,
@@ -275,7 +326,7 @@ def create_control_files() -> None:
                             "SnapshotDate": DEFAULT_SNAPSHOT_DATE,
                             "Cycle": CYCLE,
                             "IncludeFlag": True,
-                            "Notes": "Seeded from Home_Advertiser_data (5).xlsx",
+                            "Notes": f"Seeded from {source_file}",
                         }
                     ]
                 ),
@@ -324,15 +375,15 @@ def create_control_files() -> None:
                         "Notes": "Optional API refresh. API outputs are normalized to the same canonical columns as FEC bulk files.",
                     },
                     {
-                        "SourceName": "Google Civic Information API",
+                        "SourceName": "civicapi.org",
                         "SourceType": "Civic API",
-                        "System": "Google Civic Information API",
-                        "Enabled": False,
+                        "System": "civicapi.org",
+                        "Enabled": True,
                         "RawLocation": str(CIVIC_API_DIR),
-                        "CuratedOutputs": "DimCivicElection; FactCivicContest; DimCivicCandidate; FactCivicPollingLocation",
+                        "CuratedOutputs": "DimCivicElection; FactCivicContest; DimCivicCandidate; FactElectionResults",
                         "RefreshMode": f"Set {REFRESH_CIVIC_API_ENV}=1",
-                        "ApiKeyEnvVar": CIVIC_API_KEY_ENV,
-                        "Notes": "CivicAPI requires address targets for voterInfo. It provides elections/contests/candidates, not official certified results.",
+                        "ApiKeyEnvVar": "",
+                        "Notes": "civicapi.org is unauthenticated. Provides race search, certified vote totals via /race/{id}, and election dates.",
                     },
                     {
                         "SourceName": "Political Windows",
@@ -348,23 +399,6 @@ def create_control_files() -> None:
                 ]
             ),
             DATA_SOURCE_MANIFEST,
-        )
-
-    if not CIVIC_ADDRESS_TARGETS.exists():
-        write_csv(
-            pd.DataFrame(
-                columns=[
-                    "AddressTargetKey",
-                    "StateKey",
-                    "DMA",
-                    "Market",
-                    "Address",
-                    "ElectionId",
-                    "IncludeFlag",
-                    "Notes",
-                ]
-            ),
-            CIVIC_ADDRESS_TARGETS,
         )
 
     if not MAPPING_OVERRIDES.exists():
@@ -736,7 +770,8 @@ def build_committee_table() -> pd.DataFrame:
             CashOnHand=to_number(row.get("Cash_on_Hand")),
         )
 
-    dev_cash = safe_read_excel(FEC_DIR / "DEV_cash_on_hand_data.xlsx")
+    dev_cash_src = SOURCE_FILES.get("dev_cash_on_hand")
+    dev_cash = safe_read_spend(FEC_DIR / dev_cash_src.name) if dev_cash_src else pd.DataFrame()
     for _, row in dev_cash.iterrows():
         append_committee(
             registry,
@@ -882,21 +917,25 @@ def build_outside_spend() -> pd.DataFrame:
                 row.get("IMAGE_NUM"),
             )
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=FACT_OUTSIDE_SPEND_COLUMNS)
 
 
 def build_race_table(dim_candidate_race: pd.DataFrame, fact_outside_spend: pd.DataFrame) -> pd.DataFrame:
-    outside_races = fact_outside_spend[["RaceKey", "Office", "OfficeCode", "StateKey", "District", "ElectionType"]].drop_duplicates()
-    outside_races = outside_races[outside_races["RaceKey"].ne(UNKNOWN_RACE)].copy()
-    outside_races["Cycle"] = CYCLE
-    outside_races["RaceName"] = outside_races.apply(
-        lambda row: f"{CYCLE} {row['StateKey']} {row['Office']} {row['District']}".strip(),
-        axis=1,
-    )
-    outside_races["RaceLevel"] = outside_races["Office"]
-    outside_races["ElectionDate"] = ""
-    outside_races["RaceStatus"] = "Active"
-    outside_races["ResultStatus"] = "Not Loaded"
+    outside_race_cols = ["RaceKey", "Office", "OfficeCode", "StateKey", "District", "ElectionType"]
+    if fact_outside_spend.empty or not set(outside_race_cols).issubset(fact_outside_spend.columns):
+        outside_races = pd.DataFrame(columns=outside_race_cols + ["Cycle", "RaceName", "RaceLevel", "ElectionDate", "RaceStatus", "ResultStatus"])
+    else:
+        outside_races = fact_outside_spend[outside_race_cols].drop_duplicates()
+        outside_races = outside_races[outside_races["RaceKey"].ne(UNKNOWN_RACE)].copy()
+        outside_races["Cycle"] = CYCLE
+        outside_races["RaceName"] = outside_races.apply(
+            lambda row: f"{CYCLE} {row['StateKey']} {row['Office']} {row['District']}".strip(),
+            axis=1,
+        )
+        outside_races["RaceLevel"] = outside_races["Office"]
+        outside_races["ElectionDate"] = ""
+        outside_races["RaceStatus"] = "Active"
+        outside_races["ResultStatus"] = "Not Loaded"
 
     manual = pd.read_excel(RACE_MASTER_MANUAL, dtype=str).fillna("") if RACE_MASTER_MANUAL.exists() else pd.DataFrame()
     races = pd.concat([dim_candidate_race, outside_races, manual], ignore_index=True, sort=False)
@@ -1091,7 +1130,10 @@ def recompute_spend_business_keys(fact: pd.DataFrame) -> pd.DataFrame:
         "StationKey",
         "NetworkKey",
     ]
-    out["RowBusinessKey"] = out[row_key_fields].agg("|".join, axis=1)
+    key_series = out[row_key_fields[0]].astype(str)
+    for field in row_key_fields[1:]:
+        key_series = key_series + "|" + out[field].astype(str)
+    out["RowBusinessKey"] = key_series
     out["RowBusinessKeyHash"] = out["RowBusinessKey"].map(
         lambda value: hashlib.sha1(value.encode("utf-8")).hexdigest()[:16].upper()
     )
@@ -1340,25 +1382,12 @@ def build_advertiser_bridge(dim_advertiser: pd.DataFrame, entities: list[dict]) 
 
 def build_spend_activity() -> pd.DataFrame:
     if os.environ.get("LOAD_SPEND_ACTIVITY", "").strip().lower() not in {"1", "true", "yes"}:
-        return pd.DataFrame(
-            columns=[
-                "SpendActivityKey",
-                "Advertiser",
-                "AdvertiserKey",
-                "State",
-                "StateKey",
-                "DMA",
-                "DMAKey",
-                "MediaType",
-                "MediaTypeKey",
-                "WeekOfSpendDate",
-                "GrossSpending",
-            ]
-        )
-    path = SPEND_ACTIVITY_DIR / "Cross tab_data_1.xlsx"
-    if not path.exists():
-        return pd.DataFrame()
-    raw = pd.read_excel(path)
+        return pd.DataFrame(columns=SPEND_ACTIVITY_COLUMNS)
+    activity_src = SOURCE_FILES.get("spend_activity")
+    path = SPEND_ACTIVITY_DIR / activity_src.name if activity_src else None
+    if not path or not path.exists():
+        return pd.DataFrame(columns=SPEND_ACTIVITY_COLUMNS)
+    raw = safe_read_spend(path)
     out = pd.DataFrame()
     out["Advertiser"] = raw["Advertiser"].map(lambda value: clean_text(value, "Unknown"))
     out["AdvertiserKey"] = out["Advertiser"].map(lambda value: stable_key("ADV", value))
@@ -1433,19 +1462,30 @@ def build_fact_election_results() -> pd.DataFrame:
         "CertifiedFlag",
         "Source",
     ]
-    # CivicAPI provides election/contest/candidate information, but not certified
-    # official results. Keep this table empty and schema-stable until a results
-    # source file or API is added.
     candidate_file = CIVIC_API_DIR / "fact_election_results.csv"
-    if candidate_file.exists():
-        raw = pd.read_csv(candidate_file, dtype=str, keep_default_na=False)
-        for col in columns:
-            if col not in raw:
-                raw[col] = ""
-        raw["Votes"] = raw["Votes"].map(to_number)
-        raw["VoteShare"] = raw["VoteShare"].map(to_number)
-        return raw[columns].copy()
-    return pd.DataFrame(columns=columns)
+    if not candidate_file.exists():
+        return pd.DataFrame(columns=columns)
+    raw = pd.read_csv(candidate_file, dtype=str, keep_default_na=False)
+    rename_map = {
+        "CivicContestKey": "RaceKey",
+        "CivicCandidateKey": "CandidateKey",
+        "Percent": "VoteShare",
+        "Winner": "WinnerFlag",
+        "SourceSystem": "Source",
+    }
+    for src_col, dst_col in rename_map.items():
+        if src_col in raw and dst_col not in raw:
+            raw[dst_col] = raw[src_col]
+    if "ResultStatus" not in raw:
+        raw["ResultStatus"] = "Certified"
+    if "CertifiedFlag" not in raw:
+        raw["CertifiedFlag"] = "Y"
+    for col in columns:
+        if col not in raw:
+            raw[col] = ""
+    raw["Votes"] = raw["Votes"].map(to_number)
+    raw["VoteShare"] = raw["VoteShare"].map(to_number)
+    return raw[columns].copy()
 
 
 def build_source_tables(api_refresh_log: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -1890,7 +1930,7 @@ def write_documentation(row_counts: dict[str, int], qa_summary: pd.DataFrame) ->
 
 This project implements the Python-first weekly pipeline for `Political Spend Dashboard-2.pbix`.
 Power BI should connect to the curated CSV layer only. Weekly spend files,
-FEC bulk/API data, Google Civic Information API data, political windows, and
+FEC bulk/API data, civicapi.org race + results data, political windows, and
 manual review files are all normalized here before they reach the semantic model.
 
 ## Run
@@ -1908,13 +1948,13 @@ current API supplements before rebuilding the curated model, set:
 
 ```bash
 REFRESH_FEC_API=1 FEC_API_KEY='your-openfec-key'
-REFRESH_CIVIC_API=1 GOOGLE_CIVIC_API_KEY='your-google-civic-key'
+REFRESH_CIVIC_API=1
 ```
 
-`CivicAPI_AddressTargets.csv` controls which address/election lookups are sent
-to CivicAPI. CivicAPI supplies elections, contests, candidates, and polling
-location context; it does not provide certified election results, so
-`fact_election_results.csv` remains schema-only until a results source is added.
+civicapi.org is unauthenticated, so no Civic key is needed. The refresh hits
+`/getElectionDates`, `/race/search` (US, current cycle), and then `/race/{id}`
+for each completed race to populate `fact_election_results.csv` with certified
+vote totals and winner flags.
 
 ## Outputs
 
@@ -1977,47 +2017,66 @@ Tables: snapshot reconciliation, advertiser match review, unmatched advertiser s
     (POWERBI_DIR / "ReportPageBuildSpec.md").write_text(page_spec, encoding="utf-8")
 
 
+PHASE_COUNTER = {"current": 0, "total": 8}
+
+
+@contextmanager
+def phase(name: str):
+    PHASE_COUNTER["current"] += 1
+    n = PHASE_COUNTER["current"]
+    total = PHASE_COUNTER["total"]
+    start = time.monotonic()
+    print(f"\n=== [{n}/{total}] {name} ===", flush=True)
+    yield
+    elapsed = time.monotonic() - start
+    mins, secs = divmod(int(elapsed), 60)
+    duration = f"{mins}m{secs:02d}s" if mins else f"{secs}s"
+    print(f"=== [{n}/{total}] {name} done in {duration} ===", flush=True)
+
+
 def main() -> None:
     ensure_directories()
-    print("Copying source files and creating control templates...", flush=True)
-    copy_source_files()
-    create_control_files()
 
-    print("Refreshing optional API sources when enabled...", flush=True)
-    api_logs = concat_frames([refresh_fec_api_sources(), refresh_civic_api_sources()])
-    civic_tables = read_civic_tables()
+    with phase("Copying source files and creating control templates"):
+        copy_source_files()
+        create_control_files()
 
-    print("Building spend snapshot facts and dimensions...", flush=True)
-    stg_spend, fact_snapshot, fact_current, dim_snapshot, spend_stats = build_spend_tables()
-    fact_political_windows = build_political_windows()
-    fact_snapshot, market_exclusions_snapshot = apply_political_window_market_scope(fact_snapshot, fact_political_windows)
-    fact_current, market_exclusions_current = apply_political_window_market_scope(fact_current, fact_political_windows)
-    dims = build_spend_dimensions(fact_snapshot, dim_snapshot, fact_political_windows)
-    print(
-        f"Spend rows with amount: {len(stg_spend):,}; calendar-scoped fact rows: {len(fact_snapshot):,}",
-        flush=True,
-    )
+    with phase("Refreshing API sources (FEC + Civic)"):
+        api_logs = concat_frames([refresh_fec_api_sources(), refresh_civic_api_sources()])
+        civic_tables = read_civic_tables()
 
-    print("Building candidate, committee, outside-spend, race, and window tables...", flush=True)
-    dim_candidate, fact_candidate_finance, candidate_races = build_candidate_tables()
-    dim_committee = build_committee_table()
-    fact_outside_spend = build_outside_spend()
-    dim_race = build_race_table(candidate_races, fact_outside_spend)
-    fact_spend_weekly_activity = build_spend_activity()
-    bridge_race_dma = build_bridge_race_dma()
-    dim_case_study_notes = build_case_study_notes()
-    fact_election_results = build_fact_election_results()
-    dim_data_source, fact_refresh_log, qa_source_health = build_source_tables(api_logs)
+    with phase("Building spend snapshot facts and dimensions"):
+        stg_spend, fact_snapshot, fact_current, dim_snapshot, spend_stats = build_spend_tables()
+        fact_political_windows = build_political_windows()
+        fact_snapshot, market_exclusions_snapshot = apply_political_window_market_scope(fact_snapshot, fact_political_windows)
+        fact_current, market_exclusions_current = apply_political_window_market_scope(fact_current, fact_political_windows)
+        dims = build_spend_dimensions(fact_snapshot, dim_snapshot, fact_political_windows)
+        print(
+            f"  Spend rows with amount: {len(stg_spend):,}; calendar-scoped fact rows: {len(fact_snapshot):,}",
+            flush=True,
+        )
 
-    print("Building advertiser-to-entity bridge...", flush=True)
-    entities = build_entities(dim_candidate, dim_committee)
-    bridge = build_advertiser_bridge(dims["dim_advertiser"], entities)
-    bridge_fact_cols = ["AdvertiserKey", "CandidateKey", "CommitteeKey", "RaceKey", "MatchedEntityKey", "EntityType", "ConfidenceLevel", "ReviewStatus"]
-    fact_snapshot = fact_snapshot.merge(bridge[bridge_fact_cols], on="AdvertiserKey", how="left")
-    fact_current = fact_current.merge(bridge[bridge_fact_cols], on="AdvertiserKey", how="left")
+    with phase("Building candidate, committee, outside-spend, race, and window tables"):
+        dim_candidate, fact_candidate_finance, candidate_races = build_candidate_tables()
+        dim_committee = build_committee_table()
+        fact_outside_spend = build_outside_spend()
+        dim_race = build_race_table(candidate_races, fact_outside_spend)
+        fact_spend_weekly_activity = build_spend_activity()
+        bridge_race_dma = build_bridge_race_dma()
+        dim_case_study_notes = build_case_study_notes()
+        fact_election_results = build_fact_election_results()
+        dim_data_source, fact_refresh_log, qa_source_health = build_source_tables(api_logs)
 
-    print("Building QA outputs and writing curated files...", flush=True)
-    qa_outputs = build_qa(stg_spend, fact_snapshot, spend_stats, bridge)
+    with phase("Building advertiser-to-entity bridge"):
+        entities = build_entities(dim_candidate, dim_committee)
+        bridge = build_advertiser_bridge(dims["dim_advertiser"], entities)
+        bridge_fact_cols = ["AdvertiserKey", "CandidateKey", "CommitteeKey", "RaceKey", "MatchedEntityKey", "EntityType", "ConfidenceLevel", "ReviewStatus"]
+        fact_snapshot = fact_snapshot.merge(bridge[bridge_fact_cols], on="AdvertiserKey", how="left")
+        fact_current = fact_current.merge(bridge[bridge_fact_cols], on="AdvertiserKey", how="left")
+        print(f"  Matched {(bridge['MatchedEntityKey'].astype(str).str.len() > 0).sum()} advertisers; {(bridge['ConfidenceLevel'].astype(str).str.lower() == 'low').sum()} flagged low-confidence", flush=True)
+
+    with phase("Building QA outputs"):
+        qa_outputs = build_qa(stg_spend, fact_snapshot, spend_stats, bridge)
     market_exclusions = pd.concat(
         [
             market_exclusions_snapshot.assign(FactTable="FactSpendSnapshot"),
@@ -2059,7 +2118,6 @@ def main() -> None:
         "dim_civic_election": civic_tables["dim_civic_election"],
         "fact_civic_contest": civic_tables["fact_civic_contest"],
         "dim_civic_candidate": civic_tables["dim_civic_candidate"],
-        "fact_civic_polling_location": civic_tables["fact_civic_polling_location"],
         "qa_snapshot_reconciliation": qa_outputs["qa_snapshot_reconciliation"],
         "qa_duplicate_key_check": qa_outputs["duplicate_key_check"],
         "qa_advertiser_match_review": qa_outputs["advertiser_match_review"],
@@ -2069,13 +2127,20 @@ def main() -> None:
         "qa_market_scope_exclusions": qa_outputs["market_scope_exclusions"],
     }
 
-    row_counts = {}
-    for name, df in curated_tables.items():
-        write_csv(df, CURATED_DIR / f"{name}.csv")
-        row_counts[name] = len(df)
-    for name, df in qa_outputs.items():
-        write_csv(df, QA_DIR / f"{name}.csv")
-        row_counts[f"qa/{name}"] = len(df)
+    with phase("Writing curated CSVs and PowerBI assets"):
+        row_counts = {}
+        total_curated = len(curated_tables)
+        for idx, (name, df) in enumerate(curated_tables.items(), start=1):
+            write_csv(df, CURATED_DIR / f"{name}.csv")
+            row_counts[name] = len(df)
+            if idx == 1 or idx % 10 == 0 or idx == total_curated:
+                print(f"  curated {idx}/{total_curated}: {name} ({len(df):,} rows)", flush=True)
+        total_qa = len(qa_outputs)
+        for idx, (name, df) in enumerate(qa_outputs.items(), start=1):
+            write_csv(df, QA_DIR / f"{name}.csv")
+            row_counts[f"qa/{name}"] = len(df)
+            if idx == 1 or idx % 5 == 0 or idx == total_qa:
+                print(f"  qa {idx}/{total_qa}: {name} ({len(df):,} rows)", flush=True)
 
     table_map = {
         "FactSpendSnapshot": "fact_spend_snapshot.csv",
@@ -2108,7 +2173,6 @@ def main() -> None:
         "DimCivicElection": "dim_civic_election.csv",
         "FactCivicContest": "fact_civic_contest.csv",
         "DimCivicCandidate": "dim_civic_candidate.csv",
-        "FactCivicPollingLocation": "fact_civic_polling_location.csv",
         "QASnapshotReconciliation": "qa_snapshot_reconciliation.csv",
         "QADuplicateKeyCheck": "qa_duplicate_key_check.csv",
         "QAAdvertiserMatchReview": "qa_advertiser_match_review.csv",
@@ -2119,6 +2183,10 @@ def main() -> None:
     }
     write_powerbi_assets(table_map)
     write_documentation(row_counts, qa_outputs["qa_snapshot_reconciliation"].head(5))
+
+    with phase("Building consolidated PoliticalSpendDashboard.xlsx"):
+        from create_curated_workbook import main as build_workbook_main
+        build_workbook_main()
 
     print(f"ETL complete: {BASE_DIR}")
     print(f"FactSpendSnapshot rows: {len(fact_snapshot):,}")

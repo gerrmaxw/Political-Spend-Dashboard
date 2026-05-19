@@ -62,48 +62,6 @@ SWITCH (
     "Cable In Mix"
 )
 
-Zero-Cable Advertisers =
-CALCULATE (
-    DISTINCTCOUNT ( DimAdvertiser[AdvertiserKey] ),
-    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [No Cable Flag] = 1 )
-)
-
-Cable Prospects =
-CALCULATE (
-    DISTINCTCOUNT ( DimAdvertiser[AdvertiserKey] ),
-    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
-)
-
-Prospect Total Spend =
-CALCULATE (
-    [Total Spend],
-    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
-)
-
-Prospect Broadcast + CTV Spend =
-CALCULATE (
-    [Broadcast + CTV Spend],
-    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
-)
-
-Prospect Cable Opportunity $ =
-CALCULATE (
-    [Cable Opportunity $],
-    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
-)
-
-Prospect Cable Share % =
-CALCULATE (
-    [Cable Share %],
-    FILTER ( VALUES ( DimAdvertiser[AdvertiserKey] ), [Cable Prospect Flag] = 1 )
-)
-
-Selected Cable Opportunity Floor =
-SELECTEDVALUE ( 'Cable Opportunity Floor Slider'[Value], 25000 )
-
-Meets Cable Opportunity Floor Flag =
-IF ( [Cable Opportunity $] >= [Selected Cable Opportunity Floor], 1, 0 )
-
 Cumulative Spend as of Snapshot =
 SUM ( FactSpendSnapshot[Amount] )
 

@@ -3,7 +3,7 @@
 
 // Query: pProjectFolder
 let
-    Source = "\\Mac\Home\Documents\Codex\2026-05-13\files-mentioned-by-the-user-election\Political Spend Dashboard"
+    Source = "C:\Users\gmaxwe967\Dashboard\repo\Political Spend Dashboard"
 in
     Source
 
@@ -244,14 +244,6 @@ let
     Source = Csv.Document(File.Contents(pProjectFolder & "\data\curated\dim_civic_candidate.csv"), [Delimiter=",", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
     PromotedHeaders = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
     Typed = Table.TransformColumnTypes(PromotedHeaders, {{"OrderOnBallot", Int64.Type}}, "en-US")
-in
-    Typed
-
-// Query: FactCivicPollingLocation
-let
-    Source = Csv.Document(File.Contents(pProjectFolder & "\data\curated\fact_civic_polling_location.csv"), [Delimiter=",", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
-    PromotedHeaders = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
-    Typed = Table.TransformColumnTypes(PromotedHeaders, {{"StartDate", type date}, {"EndDate", type date}, {"Latitude", type number}, {"Longitude", type number}}, "en-US")
 in
     Typed
 

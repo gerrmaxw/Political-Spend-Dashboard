@@ -103,6 +103,8 @@ def normalize_media(value) -> str:
 
 def read_spend_workbook(path: Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False)
     if suffix == ".xlsb":
         return pd.read_excel(path, sheet_name=0, engine="pyxlsb")
     return pd.read_excel(path, sheet_name=0)
@@ -127,8 +129,16 @@ def normalize_spend_file(path: Path, snapshot_date: str, cycle: int, source_file
 
     normalized["Party"] = normalized["Party"].map(normalize_party)
     normalized["MediaType"] = normalized["MediaType"].map(normalize_media)
-    normalized["Amount"] = pd.to_numeric(renamed.get("Amount"), errors="coerce")
-    normalized["GrossSpending"] = pd.to_numeric(renamed.get("GrossSpending"), errors="coerce")
+
+    def _money_to_number(series):
+        if series is None:
+            return pd.Series(dtype=float)
+        cleaned = series.astype(str).str.replace(r"[$,\s]", "", regex=True)
+        cleaned = cleaned.replace({"": None, "-": None, "nan": None, "None": None})
+        return pd.to_numeric(cleaned, errors="coerce")
+
+    normalized["Amount"] = _money_to_number(renamed.get("Amount"))
+    normalized["GrossSpending"] = _money_to_number(renamed.get("GrossSpending"))
     normalized["SnapshotDate"] = pd.to_datetime(snapshot_date).date().isoformat()
     normalized["Cycle"] = int(cycle)
     normalized["SourceFile"] = source_file or path.name
@@ -166,7 +176,10 @@ def normalize_spend_file(path: Path, snapshot_date: str, cycle: int, source_file
         "StationKey",
         "NetworkKey",
     ]
-    normalized["RowBusinessKey"] = normalized[row_key_fields].agg("|".join, axis=1)
+    key_series = normalized[row_key_fields[0]].astype(str)
+    for field in row_key_fields[1:]:
+        key_series = key_series + "|" + normalized[field].astype(str)
+    normalized["RowBusinessKey"] = key_series
     normalized["RowBusinessKeyHash"] = normalized["RowBusinessKey"].map(
         lambda value: hashlib.sha1(value.encode("utf-8")).hexdigest()[:16].upper()
     )
